@@ -1,0 +1,69 @@
+# SPDX-FileCopyrightText: 2026 Alex Ausch <alex.ausch@gmail.com>
+#
+# SPDX-License-Identifier: MPL-2.0
+
+# Lint and test pull requests into main. Runs only for non-draft PRs carrying
+# the `run-ci` label; adding the label (or marking the PR ready) starts a run.
+
+name: PR
+
+on:
+  pull_request:
+    branches:
+      - main
+    types:
+      - opened
+      - synchronize
+      - reopened
+      - ready_for_review
+      - labeled
+
+permissions:
+  contents: read
+
+concurrency:
+  # Adding an unrelated label must not cancel an in-progress run, so those
+  # events get a group of their own.
+  group: >-
+    ${{ github.workflow }}-${{ github.event.pull_request.number }}-${{
+      github.event.action == 'labeled' && github.event.label.name != 'run-ci'
+      && github.run_id || 'ci' }}
+  cancel-in-progress: true
+
+jobs:
+  lint:
+    name: Lint
+    if: >-
+      !github.event.pull_request.draft
+      && contains(github.event.pull_request.labels.*.name, 'run-ci')
+      && (github.event.action != 'labeled' || github.event.label.name == 'run-ci')
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: cachix/install-nix-action@75c75c31ebece974e48ebc36b4ad125bd97bd97b # v31.11.3
+      # Read-only: PR runs execute PR-controlled code, so they get no push token.
+      - uses: cachix/cachix-action@38b082610b782e7e93e209c35fd730d399dee866 # v17
+        with:
+          name: vlaci
+          skipPush: true
+      - name: Pre-commit hooks (clippy, rustfmt, nixfmt, statix, deadnix, reuse, ...)
+        run: |
+          source <(nix print-dev-env)
+          nix fmt
+
+  test:
+    name: Test
+    if: >-
+      !github.event.pull_request.draft
+      && contains(github.event.pull_request.labels.*.name, 'run-ci')
+      && (github.event.action != 'labeled' || github.event.label.name == 'run-ci')
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: cachix/install-nix-action@75c75c31ebece974e48ebc36b4ad125bd97bd97b # v31.11.3
+      - uses: cachix/cachix-action@38b082610b782e7e93e209c35fd730d399dee866 # v17
+        with:
+          name: vlaci
+          skipPush: true
+      - name: Tests
+        run: nix build .#checks.x86_64-linux.test --print-build-logs
