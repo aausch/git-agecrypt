@@ -10,7 +10,7 @@ on:
       - main
     tags:
       - "v*"
-  pull_request:
+  # Pull requests are covered by PR.yml (label-gated).
   workflow_dispatch:
 
 permissions:
